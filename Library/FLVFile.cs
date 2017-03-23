@@ -301,10 +301,16 @@ namespace JDP {
 				return new AVIWriter(path, (int)codecID, _warnings);
 			}
 			else if (codecID == 7) {
-				path = _outputPathBase + ".264";
+				path = _outputPathBase + ".h264";
 				if (!CanWriteTo(path)) return new DummyVideoWriter();
 				return new RawH264Writer(path);
 			}
+            else if (codecID == 9)
+            {
+                path = _outputPathBase + ".h265";
+                if (!CanWriteTo(path)) return new DummyVideoWriter();
+                return new RawH265Writer(path);
+            }
 			else {
 				string typeStr;
 
@@ -934,6 +940,165 @@ namespace JDP {
 			}
 		}
 	}
+
+    static class ByteArrayRocks {
+
+        static readonly int [] Empty = new int [0];
+
+        public static int Locate (byte [] self, byte [] candidate, int startPos)
+        {
+            int ret = 0;
+            bool found = false;
+            if (IsEmptyLocate (self, candidate))
+                return -1;
+
+            for (int i = startPos; i < self.Length; i++) {
+                if (!IsMatch (self, i, candidate))
+                {
+                    continue;
+                }
+                else
+                {
+                    found = true;
+                    ret = i;
+                    break;
+                }
+            }
+
+            if (found)
+                return ret;
+            else
+                return -1;
+        }
+
+        static bool IsMatch (byte [] array, int position, byte [] candidate)
+        {
+            if (candidate.Length > (array.Length - position))
+                return false;
+
+            for (int i = 0; i < candidate.Length; i++)
+                if (array [position + i] != candidate [i])
+                    return false;
+
+            return true;
+        }
+
+        static bool IsEmptyLocate (byte [] array, byte [] candidate)
+        {
+            return array == null
+                || candidate == null
+                || array.Length == 0
+                || candidate.Length == 0
+                || candidate.Length > array.Length;
+        }
+    }
+
+    internal class RawH265Writer : IVideoWriter
+    {
+        private static readonly byte[] _startCode = new byte[] { 0, 0, 0, 1 };
+
+        private string _path;
+        private FileStream _fs;
+        private int _nalLengthSize;
+
+        public RawH265Writer(string path)
+        {
+            _path = path;
+            _fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, 65536);
+        }
+
+        public void WriteChunk(byte[] chunk, uint timeStamp, int frameType)
+        {
+            if (chunk.Length < 4) return;
+
+            if (chunk[0] == 0)
+            { // Headers
+                if (chunk.Length < 10) return;
+                
+                int offset, vpsCount, spsCount, ppsCount;
+                int [] index = new int[] {0,0,0,0,0,0};
+                int i = 0, j = 0;
+                byte[] temp = chunk;
+                while(true){
+                    index[i] = ByteArrayRocks.Locate(chunk, _startCode, j);
+                    if (index[i] == -1)
+                    {
+                        index[i] = chunk.Length;
+                        break;
+                    }
+                    else
+                    {
+                        j = index[i] + 1;
+                        i++;
+                    }
+                }
+
+                /** hevc only have one vps¡¢sps¡¢pps**/
+                vpsCount = 1;
+                spsCount = 1;
+                ppsCount = 1;
+
+                offset = 8;
+                _nalLengthSize = (chunk[offset++] & 0x03) + 1;
+                spsCount = chunk[offset++] & 0x1F;
+                ppsCount = -1;
+
+                while (offset <= chunk.Length - 2)
+                {
+                    if ((spsCount == 0) && (ppsCount == -1))
+                    {
+                        ppsCount = chunk[offset++];
+                        continue;
+                    }
+
+                    if (spsCount > 0) spsCount--;
+                    else if (ppsCount > 0) ppsCount--;
+                    else break;
+
+                    int len = (int)BitConverterBE.ToUInt16(chunk, offset);
+                    offset += 2;
+                    if (offset + len > chunk.Length) break;
+                    _fs.Write(_startCode, 0, _startCode.Length);
+                    _fs.Write(chunk, offset, len);
+                    offset += len;
+                }
+            }
+            else
+            { // Video data
+                int offset = 4;
+
+                if (_nalLengthSize != 2)
+                {
+                    _nalLengthSize = 4;
+                }
+
+                while (offset <= chunk.Length - _nalLengthSize)
+                {
+                    int len = (_nalLengthSize == 2) ?
+                        (int)BitConverterBE.ToUInt16(chunk, offset) :
+                        (int)BitConverterBE.ToUInt32(chunk, offset);
+                    offset += _nalLengthSize;
+                    if (offset + len > chunk.Length) break;
+                    _fs.Write(_startCode, 0, _startCode.Length);
+                    _fs.Write(chunk, offset, len);
+                    offset += len;
+                }
+            }
+        }
+
+        public void Finish(FractionUInt32 averageFrameRate)
+        {
+            _fs.Close();
+        }
+
+        public string Path
+        {
+            get
+            {
+                return _path;
+            }
+        }
+    }
 
 	internal class RawH264Writer : IVideoWriter {
 		private static readonly byte[] _startCode = new byte[] { 0, 0, 0, 1 };
