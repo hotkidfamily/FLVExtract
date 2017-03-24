@@ -999,7 +999,6 @@ namespace JDP {
 
         private string _path;
         private FileStream _fs;
-        private int _nalLengthSize;
 
         public RawH265Writer(string path)
         {
