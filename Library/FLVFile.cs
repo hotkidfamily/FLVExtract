@@ -305,7 +305,7 @@ namespace JDP {
 				if (!CanWriteTo(path)) return new DummyVideoWriter();
 				return new RawH264Writer(path);
 			}
-            else if ((codecID == 9) || (codecID == 12 ))
+            else if (codecID == 12)
             {
                 path = _outputPathBase + ".h265";
                 if (!CanWriteTo(path)) return new DummyVideoWriter();
