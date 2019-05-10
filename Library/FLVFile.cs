@@ -209,8 +209,14 @@ namespace JDP {
 				return false;
 			}
 			mediaInfo = ReadUInt8();
+            UInt32 composition = GetUInt32();
+            UInt32 tempv = composition & 0x00ffffff;
+            Int32 compositionTime = (Int32)((tempv & 0x00800000) << 8 | (tempv & 0x007fffff));
+            Int32 pts = (Int32)timeStamp + compositionTime;
 			dataSize -= 1;
 			data = ReadBytes((int)dataSize);
+
+            
 
 			if (tagType == 0x8) {  // Audio
 				if (_audioWriter == null) {
@@ -231,7 +237,7 @@ namespace JDP {
 				}
 				_videoTimeStamps.Add(timeStamp);
 				_videoWriter.WriteChunk(data, timeStamp, (int)((mediaInfo & 0xF0) >> 4));
-				_timeCodeWriter.Write(timeStamp);
+                _timeCodeWriter.Write(timeStamp, pts, compositionTime);
 			}
 
 			return true;
@@ -444,6 +450,14 @@ namespace JDP {
 			_fileOffset += length;
 			return buff;
 		}
+
+        private UInt32 GetUInt32()
+        {
+            byte[] x = new byte[4];
+            _fs.Read(x, 0, 4);
+            _fs.Seek(-4, SeekOrigin.Current);
+            return BitConverterBE.ToUInt32(x, 0);
+        }
 	}
 
 	internal class DummyAudioWriter : IAudioWriter {
@@ -1495,9 +1509,9 @@ namespace JDP {
 			}
 		}
 
-		public void Write(uint timeStamp) {
+		public void Write(uint timeStamp, Int32 composite = 0, Int32 delta = 0) {
 			if (_sw != null) {
-				_sw.WriteLine(timeStamp);
+                _sw.WriteLine("{0:D},{1:D},{2:D}", timeStamp, composite, delta);
 			}
 		}
 
