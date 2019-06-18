@@ -208,6 +208,7 @@ namespace JDP {
 			if ((_fileLength - _fileOffset) < dataSize) {
 				return false;
 			}
+
 			mediaInfo = ReadUInt8();
             UInt32 composition = GetUInt32();
             UInt32 tempv = composition & 0x00ffffff;
@@ -215,8 +216,6 @@ namespace JDP {
             Int32 pts = (Int32)timeStamp + compositionTime;
 			dataSize -= 1;
 			data = ReadBytes((int)dataSize);
-
-            
 
 			if (tagType == 0x8) {  // Audio
 				if (_audioWriter == null) {
@@ -235,9 +234,16 @@ namespace JDP {
 					_timeCodeWriter = new TimeCodeWriter((_extractTimeCodes && CanWriteTo(path)) ? path : null);
 					_extractedTimeCodes = _extractTimeCodes;
 				}
+                uint diff = 0;
+                if (_videoTimeStamps.Count > 0)
+                {
+                    uint lastTimeStamp = 0;
+                    lastTimeStamp = _videoTimeStamps[_videoTimeStamps.Count - 1];
+                    diff = timeStamp - lastTimeStamp;
+                }
 				_videoTimeStamps.Add(timeStamp);
 				_videoWriter.WriteChunk(data, timeStamp, (int)((mediaInfo & 0xF0) >> 4));
-                _timeCodeWriter.Write(timeStamp, pts, compositionTime);
+                _timeCodeWriter.Write(timeStamp, diff, pts, compositionTime);
 			}
 
 			return true;
@@ -1505,13 +1511,14 @@ namespace JDP {
 			_path = path;
 			if (path != null) {
 				_sw = new StreamWriter(path, false, Encoding.ASCII);
-				_sw.WriteLine("# timecode format v2");
+				_sw.WriteLine("# timecode format v2,,,");
+                _sw.WriteLine("dts,dts-step,pts,pts-dts");
 			}
 		}
 
-		public void Write(uint timeStamp, Int32 composite = 0, Int32 delta = 0) {
+		public void Write(uint timeStamp, uint diff = 0, Int32 composite = 0, Int32 delta = 0) {
 			if (_sw != null) {
-                _sw.WriteLine("{0:D},{1:D},{2:D}", timeStamp, composite, delta);
+                _sw.WriteLine("{0:D},{3:D},{1:D},{2:D}", timeStamp, composite, delta, diff);
 			}
 		}
 
